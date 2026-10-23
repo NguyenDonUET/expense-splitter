@@ -1,0 +1,14 @@
+---
+description: Follow the phased Expense Splitter build plan across sessions
+alwaysApply: true
+---
+
+# Build phases
+
+Before implementing a feature, read `spec/build-plan.md`. It is the source of truth for scope, stack, and design choices.
+
+- Implement only the phase the user names. If they say "next phase", take the first `pending` row in that file's status table.
+- Compare the repo with that phase first. Fill gaps. Leave later-phase code that already works.
+- When the phase meets its acceptance criteria, change its status in `spec/build-plan.md` to `completed`.
+- Do not rewrite money math, the Zustand boundary, or the theme script. Those decisions are locked in the plan.
+- Verify UI changes in the browser before calling the phase done.

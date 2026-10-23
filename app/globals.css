@@ -1,0 +1,65 @@
+@import "../starter/tailwind.css";
+
+@source ".";
+@source "../components";
+@source "../lib";
+@source "../stores";
+
+@theme {
+  --font-sans: var(--font-manrope), system-ui, sans-serif;
+  --font-mono: var(--font-plex), ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+  }
+
+  body {
+    min-height: 100vh;
+    font-family: var(--font-sans);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+.btn-accent {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.btn-accent:hover {
+  background: var(--color-accent-hover);
+}
+
+:root[data-theme="dark"] .btn-accent {
+  color: #0a0d13;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .btn-accent {
+    color: #0a0d13;
+  }
+}
+
+body {
+  font-family: var(--font-manrope), system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: var(--font-plex), ui-monospace, monospace;
+}
