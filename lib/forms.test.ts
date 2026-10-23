@@ -45,7 +45,7 @@ describe("draftSplits", () => {
       amount: 100,
       currency: "USD",
     });
-    expect("error" in invalid && invalid.error).toMatch(/must add up to/);
+    expect("error" in invalid && invalid.error).toBe("forms.exactSum");
   });
 
   it("rejects percentages that do not add to 100", () => {
@@ -59,7 +59,7 @@ describe("draftSplits", () => {
       amount: 80,
       currency: "USD",
     });
-    expect("error" in invalid && invalid.error).toMatch(/must add up to 100%/);
+    expect("error" in invalid && invalid.error).toBe("forms.percentSum");
 
     const valid = draftSplits({
       splitType: "percentage",

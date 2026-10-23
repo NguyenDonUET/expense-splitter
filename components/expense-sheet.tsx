@@ -1,25 +1,27 @@
 "use client";
 
 import { useEffect, useId, useMemo, useState } from "react";
+import { useT } from "@/components/i18n-provider";
 import { categoriesForGroup, SUPPORTED_CURRENCIES } from "@/lib/catalog";
 import type { Expense, Group, RecurringFrequency, SplitType } from "@/lib/domain";
 import { draftSplits, parseAmount } from "@/lib/forms";
 import { dateInputValue, dateToIso, todayInput } from "@/lib/dates";
+import { formatError } from "@/lib/i18n/format-error";
+import { translateCategory } from "@/lib/i18n/t";
 import { createId } from "@/lib/ids";
 import { currencySymbol, formatMoney } from "@/lib/money";
 import { rateIntoGroup } from "@/lib/sample";
 import { deleteExpense, upsertExpense } from "@/lib/group-actions";
 import { useAppStore, viewerId } from "@/stores/app-store";
-import { Button, controlClass, Field } from "@/components/ui";
-
-const SPLIT_TYPES: { id: SplitType; label: string }[] = [
-  { id: "equal", label: "Equal" },
-  { id: "exact", label: "Exact" },
-  { id: "percentage", label: "Percentage" },
-  { id: "shares", label: "Shares" },
-];
+import { AppSelect } from "@/components/ui/app-select";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export function ExpenseSheet({ group }: { group: Group }) {
+  const t = useT();
   const viewingAs = useAppStore((state) => state.viewingAs);
   const sheet = useAppStore((state) => state.sheet);
   const closeSheet = useAppStore((state) => state.closeSheet);
@@ -54,6 +56,12 @@ export function ExpenseSheet({ group }: { group: Group }) {
 
   const categories = categoriesForGroup(group.customCategories);
   const occurrence = Boolean(existing?.recurringTemplateId);
+  const splitTypes: { id: SplitType; label: string }[] = [
+    { id: "equal", label: t("split.equal") },
+    { id: "exact", label: t("split.exact") },
+    { id: "percentage", label: t("split.percentage") },
+    { id: "shares", label: t("split.shares") },
+  ];
 
   useEffect(() => {
     if (rateIsUserSet) return;
@@ -109,24 +117,24 @@ export function ExpenseSheet({ group }: { group: Group }) {
   async function save() {
     setFieldError(null);
     if (!description.trim()) {
-      setFieldError("Enter a description.");
+      setFieldError(t("expense.enterDescription"));
       return;
     }
     if ("error" in parsedAmount) {
-      setFieldError(parsedAmount.error);
+      setFieldError(t(parsedAmount.error, parsedAmount.vars));
       return;
     }
     if (!Number.isFinite(parsedRate) || parsedRate <= 0) {
-      setFieldError("Enter an exchange rate greater than zero.");
+      setFieldError(t("expense.enterRate"));
       return;
     }
     if ("error" in preview) {
-      setFieldError(preview.error);
+      setFieldError(t(preview.error, preview.vars));
       return;
     }
     const chosenCategory = category === "__custom" ? customCategory.trim() : category;
     if (!chosenCategory) {
-      setFieldError("Choose a category.");
+      setFieldError(t("expense.chooseCategory"));
       return;
     }
     const expense: Expense = {
@@ -153,10 +161,10 @@ export function ExpenseSheet({ group }: { group: Group }) {
     const next = upsertExpense({ ...group, customCategories }, expense, viewer || paidBy, existing ? "edit" : "add");
     setSaving(true);
     try {
-      await commit(next, existing ? "Expense updated." : "Expense saved.");
+      await commit(next, existing ? "status.expenseUpdated" : "status.expenseSaved");
       closeSheet();
     } catch (error) {
-      setFieldError(error instanceof Error ? error.message : "Could not save this expense.");
+      setFieldError(formatError(error, t, "errors.saveExpense"));
     } finally {
       setSaving(false);
     }
@@ -166,21 +174,32 @@ export function ExpenseSheet({ group }: { group: Group }) {
     const next = deleteExpense(group, existing?.id ?? "", viewer || paidBy);
     setSaving(true);
     try {
-      await commit(next, "Expense deleted.");
+      await commit(next, "status.expenseDeleted");
       closeSheet();
     } catch (error) {
-      setFieldError(error instanceof Error ? error.message : "Could not delete this expense.");
+      setFieldError(formatError(error, t, "errors.deleteExpense"));
       setSaving(false);
     }
   }
 
-  const selectedCount = `${included.length} of ${group.members.length} members selected`;
-  const splitError = "error" in preview && amount ? preview.error : null;
+  const selectedCount = t("expense.selectedCount", { included: included.length, total: group.members.length });
+  const splitError = "error" in preview && amount ? t(preview.error, preview.vars) : null;
   const splitErrorId = `${formId}-split-error`;
+  const amountError = "error" in parsedAmount && amount ? t(parsedAmount.error, parsedAmount.vars) : null;
   const equalPreview =
     splitType === "equal" && "splits" in preview && !("error" in parsedAmount)
-      ? `${formatMoney(parsedAmount.value, currency)} split ${included.length} ${included.length === 1 ? "way" : "ways"}`
+      ? included.length === 1
+        ? t("expense.equalPreview", { amount: formatMoney(parsedAmount.value, currency), count: included.length })
+        : t("expense.equalPreviewMany", { amount: formatMoney(parsedAmount.value, currency), count: included.length })
       : null;
+  const rateHint =
+    rateStatus === "loading"
+      ? t("expense.rateFetching")
+      : rateStatus === "stale"
+        ? t("expense.rateStale")
+        : rateStatus === "missing"
+          ? t("expense.rateMissing")
+          : t("expense.rateHint");
 
   return (
     <form
@@ -190,81 +209,64 @@ export function ExpenseSheet({ group }: { group: Group }) {
         void save();
       }}
     >
-      <Field id={`${formId}-amount`} label="Amount" error={"error" in parsedAmount && amount ? parsedAmount.error : null}>
-        <input
+      <Field id={`${formId}-amount`} label={t("expense.amount")} error={amountError}>
+        <Input
           id={`${formId}-amount`}
-          className={`${controlClass} font-mono text-lg`}
+          className="font-mono text-lg"
           inputMode="decimal"
           autoComplete="off"
           aria-required="true"
-          aria-describedby={"error" in parsedAmount && amount ? `${formId}-amount-error` : undefined}
+          aria-invalid={Boolean(amountError)}
+          aria-describedby={amountError ? `${formId}-amount-error` : undefined}
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
         />
       </Field>
 
-      <Field id={`${formId}-description`} label="Description">
-        <input
-          id={`${formId}-description`}
-          className={controlClass}
-          aria-required="true"
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-        />
+      <Field id={`${formId}-description`} label={t("expense.description")}>
+        <Input id={`${formId}-description`} aria-required="true" value={description} onChange={(event) => setDescription(event.target.value)} />
       </Field>
 
       <fieldset className="grid gap-2">
-        <legend className="text-sm font-medium">Who paid</legend>
+        <legend className="text-sm font-medium">{t("expense.whoPaid")}</legend>
         <div className="flex flex-wrap gap-2">
           {group.members.map((member) => {
             const selected = paidBy === member.id;
             return (
-              <button
+              <Button
                 key={member.id}
                 type="button"
+                variant={selected ? "default" : "outline"}
                 aria-pressed={selected}
+                className="rounded-full"
                 onClick={() => setPaidBy(member.id)}
-                className={`min-h-11 rounded-full border px-3 text-sm ${selected ? "border-accent bg-accent-subtle text-text-primary" : "border-border text-text-secondary"}`}
               >
                 {member.name}
-              </button>
+              </Button>
             );
           })}
         </div>
       </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id={`${formId}-currency`} label="Currency">
-          <select id={`${formId}-currency`} className={controlClass} value={currency} onChange={(event) => setCurrency(event.target.value)}>
-            {SUPPORTED_CURRENCIES.map((code) => (
-              <option key={code} value={code}>
-                {currencySymbol(code)} {code}
-              </option>
-            ))}
-          </select>
+        <Field id={`${formId}-currency`} label={t("expense.currency")}>
+          <AppSelect
+            id={`${formId}-currency`}
+            value={currency}
+            onValueChange={setCurrency}
+            items={SUPPORTED_CURRENCIES.map((code) => ({ value: code, label: `${currencySymbol(code)} ${code}` }))}
+          />
         </Field>
-        <Field id={`${formId}-date`} label="Date">
-          <input id={`${formId}-date`} type="date" className={controlClass} value={date} onChange={(event) => setDate(event.target.value)} required />
+        <Field id={`${formId}-date`} label={t("expense.date")}>
+          <Input id={`${formId}-date`} type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         </Field>
       </div>
 
       {currency !== group.currency ? (
-        <Field
-          id={`${formId}-rate`}
-          label={`Exchange rate into ${group.currency}`}
-          hint={
-            rateStatus === "loading"
-              ? "Fetching exchange rates..."
-              : rateStatus === "stale"
-                ? "Rates may be outdated. The last cached rate is filled in."
-                : rateStatus === "missing"
-                  ? "Live rates are unavailable. Enter a rate to continue."
-                  : "Saved on this expense so later rate changes do not move the balance."
-          }
-        >
-          <input
+        <Field id={`${formId}-rate`} label={t("expense.rateInto", { currency: group.currency })} hint={rateHint}>
+          <Input
             id={`${formId}-rate`}
-            className={`${controlClass} font-mono`}
+            className="font-mono"
             inputMode="decimal"
             aria-busy={rateStatus === "loading"}
             value={rateText}
@@ -276,56 +278,55 @@ export function ExpenseSheet({ group }: { group: Group }) {
         </Field>
       ) : null}
 
-      <Field id={`${formId}-category`} label="Category">
-        <select id={`${formId}-category`} className={controlClass} value={category} onChange={(event) => setCategory(event.target.value)}>
-          {categories.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-          <option value="__custom">Custom category</option>
-        </select>
+      <Field id={`${formId}-category`} label={t("expense.category")}>
+        <AppSelect
+          id={`${formId}-category`}
+          value={category}
+          onValueChange={setCategory}
+          items={[
+            ...categories.map((item) => ({ value: item, label: translateCategory(t, item) })),
+            { value: "__custom", label: t("expense.customCategory") },
+          ]}
+        />
       </Field>
       {category === "__custom" ? (
-        <Field id={`${formId}-custom`} label="Custom category name">
-          <input id={`${formId}-custom`} className={controlClass} value={customCategory} onChange={(event) => setCustomCategory(event.target.value)} />
+        <Field id={`${formId}-custom`} label={t("expense.customCategoryName")}>
+          <Input id={`${formId}-custom`} value={customCategory} onChange={(event) => setCustomCategory(event.target.value)} />
         </Field>
       ) : null}
 
       <fieldset className="grid gap-3" aria-describedby={splitError ? splitErrorId : undefined}>
-        <legend className="text-sm font-medium">Split</legend>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Split type">
-          {SPLIT_TYPES.map((type) => (
-            <button
-              key={type.id}
-              type="button"
-              role="radio"
-              aria-checked={splitType === type.id}
-              onClick={() => setSplitType(type.id)}
-              className={`min-h-11 rounded-md border text-sm font-medium ${splitType === type.id ? "border-accent bg-accent-subtle" : "border-border"}`}
-            >
+        <legend className="text-sm font-medium">{t("expense.split")}</legend>
+        <ToggleGroup
+          type="single"
+          value={splitType}
+          onValueChange={(value) => {
+            if (value) setSplitType(value as SplitType);
+          }}
+          variant="outline"
+          spacing={2}
+          className="grid w-full grid-cols-2 sm:grid-cols-4"
+          aria-label={t("expense.splitType")}
+        >
+          {splitTypes.map((type) => (
+            <ToggleGroupItem key={type.id} value={type.id} className="min-h-11">
               {type.label}
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
         <p className="text-sm text-text-secondary">{selectedCount}</p>
         <ul className="grid gap-2">
           {group.members.map((member) => {
             const on = included.includes(member.id);
             return (
               <li key={member.id} className="grid grid-cols-[1fr_auto] items-center gap-3">
-                <button
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => toggleMember(member.id)}
-                  className={`min-h-11 rounded-md border px-3 text-left text-sm ${on ? "border-accent" : "border-border text-text-secondary"}`}
-                >
+                <Button type="button" variant={on ? "outline" : "ghost"} aria-pressed={on} className="justify-start" onClick={() => toggleMember(member.id)}>
                   {member.name}
-                </button>
+                </Button>
                 {splitType === "exact" && on ? (
-                  <input
-                    aria-label={`${member.name} exact amount`}
-                    className={`${controlClass} w-28 font-mono`}
+                  <Input
+                    aria-label={t("expense.exactAmountFor", { name: member.name })}
+                    className="w-28 font-mono"
                     inputMode="decimal"
                     aria-invalid={Boolean(splitError)}
                     aria-describedby={splitError ? splitErrorId : undefined}
@@ -334,9 +335,9 @@ export function ExpenseSheet({ group }: { group: Group }) {
                   />
                 ) : null}
                 {splitType === "percentage" && on ? (
-                  <input
-                    aria-label={`${member.name} percentage`}
-                    className={`${controlClass} w-24 font-mono`}
+                  <Input
+                    aria-label={t("expense.percentageFor", { name: member.name })}
+                    className="w-24 font-mono"
                     inputMode="decimal"
                     aria-invalid={Boolean(splitError)}
                     aria-describedby={splitError ? splitErrorId : undefined}
@@ -345,9 +346,9 @@ export function ExpenseSheet({ group }: { group: Group }) {
                   />
                 ) : null}
                 {splitType === "shares" && on ? (
-                  <input
-                    aria-label={`${member.name} shares`}
-                    className={`${controlClass} w-24 font-mono`}
+                  <Input
+                    aria-label={t("expense.sharesFor", { name: member.name })}
+                    className="w-24 font-mono"
                     inputMode="numeric"
                     value={shares[member.id] ?? "1"}
                     onChange={(event) => setShares({ ...shares, [member.id]: event.target.value })}
@@ -372,23 +373,23 @@ export function ExpenseSheet({ group }: { group: Group }) {
         ) : null}
       </fieldset>
 
-      <Field id={`${formId}-recurring`} label="Repeat" hint={occurrence ? "This is one occurrence. Editing it does not change the series." : undefined}>
-        <select
+      <Field id={`${formId}-recurring`} label={t("expense.repeat")} hint={occurrence ? t("expense.occurrenceHint") : undefined}>
+        <AppSelect
           id={`${formId}-recurring`}
-          className={controlClass}
-          value={recurring}
+          value={recurring || "none"}
           disabled={occurrence}
-          onChange={(event) => setRecurring(event.target.value as RecurringFrequency | "")}
-        >
-          <option value="">Does not repeat</option>
-          <option value="weekly">Weekly</option>
-          <option value="biweekly">Every two weeks</option>
-          <option value="monthly">Monthly</option>
-        </select>
+          onValueChange={(value) => setRecurring(value === "none" ? "" : (value as RecurringFrequency))}
+          items={[
+            { value: "none", label: t("expense.doesNotRepeat") },
+            { value: "weekly", label: t("expense.weekly") },
+            { value: "biweekly", label: t("expense.biweekly") },
+            { value: "monthly", label: t("expense.monthly") },
+          ]}
+        />
       </Field>
 
-      <Field id={`${formId}-notes`} label="Notes">
-        <textarea id={`${formId}-notes`} className={`${controlClass} min-h-20 py-2`} value={notes} onChange={(event) => setNotes(event.target.value)} />
+      <Field id={`${formId}-notes`} label={t("expense.notes")}>
+        <Textarea id={`${formId}-notes`} value={notes} onChange={(event) => setNotes(event.target.value)} />
       </Field>
 
       {fieldError ? (
@@ -399,26 +400,26 @@ export function ExpenseSheet({ group }: { group: Group }) {
 
       <div className="flex flex-wrap gap-2">
         <Button type="submit" disabled={saving}>
-          {saving ? "Saving..." : existing ? "Save changes" : "Add expense"}
+          {saving ? t("expense.saving") : existing ? t("expense.saveChanges") : t("expense.addExpense")}
         </Button>
-        <Button variant="quiet" onClick={closeSheet}>
-          Cancel
+        <Button variant="outline" onClick={closeSheet}>
+          {t("expense.cancel")}
         </Button>
         {existing && !confirmDelete ? (
           <Button variant="ghost" onClick={() => setConfirmDelete(true)}>
-            Delete
+            {t("expense.delete")}
           </Button>
         ) : null}
       </div>
       {confirmDelete ? (
         <div className="grid gap-3 rounded-md border border-border bg-bg-secondary p-3">
-          <p>Delete “{existing?.description}”? Balances will update immediately.</p>
+          <p>{t("expense.confirmDelete", { description: existing?.description ?? "" })}</p>
           <div className="flex gap-2">
-            <Button variant="danger" onClick={() => void remove()}>
-              Delete expense
+            <Button variant="destructive" onClick={() => void remove()}>
+              {t("expense.deleteExpense")}
             </Button>
-            <Button variant="quiet" onClick={() => setConfirmDelete(false)}>
-              Keep it
+            <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+              {t("expense.keepIt")}
             </Button>
           </div>
         </div>

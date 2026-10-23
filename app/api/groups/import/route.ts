@@ -8,9 +8,9 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
+  if (!session?.user?.id) return NextResponse.json({ error: "errors.signInRequired" }, { status: 401 });
   const db = await getDb();
-  if (!db) return NextResponse.json({ error: "MongoDB is not configured. Set DATABASE_URL to save accounts." }, { status: 503 });
+  if (!db) return NextResponse.json({ error: "errors.mongoSave" }, { status: 503 });
   const body = (await request.json()) as { groups?: Group[] };
   const groups = Array.isArray(body.groups) ? body.groups : [];
   for (const group of groups) {

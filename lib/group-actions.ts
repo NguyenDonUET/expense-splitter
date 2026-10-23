@@ -1,11 +1,12 @@
+import { AppError } from "@/lib/errors";
 import { memberBalance, pairDebtAmount } from "@/lib/balances";
 import type { ActivityEvent, Expense, Group, Member, Settlement } from "@/lib/domain";
 import { createId } from "@/lib/ids";
 import { isDust, toMinor } from "@/lib/money";
 
-export function memberName(group: Group, memberId: string | undefined): string {
-  if (!memberId) return "Someone";
-  return group.members.find((member) => member.id === memberId)?.name ?? "Someone";
+export function memberName(group: Group, memberId: string | undefined, unknown = "Someone"): string {
+  if (!memberId) return unknown;
+  return group.members.find((member) => member.id === memberId)?.name ?? unknown;
 }
 
 export function recordActivity(group: Group, event: Omit<ActivityEvent, "id" | "at"> & { at?: string }): Group {
@@ -15,6 +16,7 @@ export function recordActivity(group: Group, event: Omit<ActivityEvent, "id" | "
     kind: event.kind,
     actorId: event.actorId,
     summary: event.summary,
+    label: event.label,
     expenseId: event.expenseId,
     settlementId: event.settlementId,
     memberId: event.memberId,
@@ -24,16 +26,14 @@ export function recordActivity(group: Group, event: Omit<ActivityEvent, "id" | "
 
 export function removalBlockReason(group: Group, memberId: string): string | null {
   const member = group.members.find((item) => item.id === memberId);
-  if (!member) return "That member is not in this group.";
-  if (!isDust(memberBalance(group, memberId).minor)) {
-    return `${member.name} still has a balance. Settle it before removing them.`;
-  }
+  if (!member) return "errors.memberNotInGroup";
+  if (!isDust(memberBalance(group, memberId).minor)) return "errors.memberHasBalance";
   return null;
 }
 
 export function deleteGroupBlockReason(group: Group): string | null {
   const open = group.members.some((member) => !isDust(memberBalance(group, member.id).minor));
-  if (open) return "Settle every balance before deleting this group.";
+  if (open) return "errors.groupHasBalances";
   return null;
 }
 
@@ -42,6 +42,7 @@ export function upsertExpense(group: Group, expense: Expense, actorId: string | 
     mode === "add"
       ? [expense, ...group.expenses.filter((item) => item.id !== expense.id)]
       : group.expenses.map((item) => (item.id === expense.id ? expense : item));
+  const actor = memberName(group, actorId ?? expense.paidBy);
   const verb = mode === "add" ? "added" : "edited";
   return recordActivity(
     { ...group, expenses },
@@ -49,7 +50,8 @@ export function upsertExpense(group: Group, expense: Expense, actorId: string | 
       kind: mode === "add" ? "expense.added" : "expense.edited",
       actorId,
       expenseId: expense.id,
-      summary: `${memberName(group, actorId ?? expense.paidBy)} ${verb} “${expense.description}”`,
+      label: expense.description,
+      summary: `${actor} ${verb} “${expense.description}”`,
     },
   );
 }
@@ -63,6 +65,7 @@ export function deleteExpense(group: Group, expenseId: string, actorId: string |
       kind: "expense.deleted",
       actorId,
       expenseId,
+      label: expense.description,
       summary: `${memberName(group, actorId ?? expense.paidBy)} deleted “${expense.description}”`,
     },
   );
@@ -71,12 +74,14 @@ export function deleteExpense(group: Group, expenseId: string, actorId: string |
 export function addSettlement(group: Group, settlement: Settlement, actorId: string | undefined): Group {
   const debt = pairDebtAmount(group, settlement.from, settlement.to);
   const paying = settlement.amount * settlement.exchangeRate;
+  const from = memberName(group, settlement.from);
+  const to = memberName(group, settlement.to);
   if (toMinor(debt, group.currency) <= 1) {
-    throw new Error(`${memberName(group, settlement.from)} does not owe ${memberName(group, settlement.to)}.`);
+    throw new AppError("errors.doesNotOwe", { from, to });
   }
-  if (paying <= 0) throw new Error("Enter a payment greater than zero.");
+  if (paying <= 0) throw new AppError("errors.paymentZero");
   if (toMinor(paying, group.currency) > toMinor(debt, group.currency) + 1) {
-    throw new Error("That payment is more than the current debt.");
+    throw new AppError("errors.paymentTooLarge");
   }
   return recordActivity(
     { ...group, settlements: [settlement, ...group.settlements] },
@@ -84,14 +89,14 @@ export function addSettlement(group: Group, settlement: Settlement, actorId: str
       kind: "settlement.recorded",
       actorId,
       settlementId: settlement.id,
-      summary: `${memberName(group, settlement.from)} paid ${memberName(group, settlement.to)}`,
+      summary: `${from} paid ${to}`,
     },
   );
 }
 
 export function addMember(group: Group, member: Member, actorId: string | undefined): Group {
   if (group.members.some((item) => item.name.toLowerCase() === member.name.toLowerCase())) {
-    throw new Error(`${member.name} is already in this group.`);
+    throw new AppError("errors.memberDuplicate", { name: member.name });
   }
   return recordActivity(
     { ...group, members: [...group.members, member] },
@@ -99,6 +104,7 @@ export function addMember(group: Group, member: Member, actorId: string | undefi
       kind: "member.added",
       actorId,
       memberId: member.id,
+      label: member.name,
       summary: `${member.name} joined ${group.name}`,
     },
   );
@@ -106,14 +112,18 @@ export function addMember(group: Group, member: Member, actorId: string | undefi
 
 export function removeMember(group: Group, memberId: string, actorId: string | undefined): Group {
   const reason = removalBlockReason(group, memberId);
-  if (reason) throw new Error(reason);
+  if (reason) {
+    const name = memberName(group, memberId);
+    throw new AppError(reason, reason === "errors.memberHasBalance" ? { name } : undefined);
+  }
   const name = memberName(group, memberId);
   return recordActivity(
-    { ...group, members: group.members.filter((item) => item.id !== memberId) },
+    { ...group, members: group.members.filter((member) => member.id !== memberId) },
     {
       kind: "member.removed",
       actorId,
       memberId,
+      label: name,
       summary: `${name} left ${group.name}`,
     },
   );

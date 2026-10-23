@@ -3,9 +3,20 @@
 import Link from "next/link";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
+import { useT } from "@/components/i18n-provider";
 import { GUEST_COOKIE, GROUPS_STORAGE_KEY, IMPORT_FLAG } from "@/lib/store/types";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function AccountMenu() {
+  const t = useT();
   const { data, status } = useSession();
   const [guest, setGuest] = useState(false);
 
@@ -15,34 +26,35 @@ export function AccountMenu() {
 
   if (status === "authenticated" && data?.user) {
     return (
-      <div className="flex items-center gap-2">
-        <span className="max-w-40 truncate text-sm text-text-secondary">{data.user.email ?? data.user.name}</span>
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center text-sm font-medium underline-offset-4 hover:underline"
-          onClick={() => void signOut({ callbackUrl: "/" })}
-        >
-          Sign out
-        </button>
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline">{data.user.email ?? data.user.name ?? t("account.account")}</Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>{t("account.signedIn")}</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => void signOut({ callbackUrl: "/" })}>{t("account.signOut")}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
   return (
-    <div className="flex items-center gap-3">
-      {guest ? <span className="text-sm text-text-secondary">Guest</span> : null}
-      <Link
-        href="/sign-up"
-        className="inline-flex min-h-11 items-center text-sm font-medium underline-offset-4 hover:underline"
-        onClick={() => {
-          if (sessionStorage.getItem(GROUPS_STORAGE_KEY)) sessionStorage.setItem(IMPORT_FLAG, "1");
-        }}
-      >
-        Sign up
-      </Link>
-      <Link href="/sign-in" className="inline-flex min-h-11 items-center text-sm font-medium underline-offset-4 hover:underline">
-        Sign in
-      </Link>
+    <div className="flex items-center gap-2">
+      {guest ? <span className="text-sm text-text-secondary">{t("account.guest")}</span> : null}
+      <Button asChild variant="ghost">
+        <Link
+          href="/sign-up"
+          onClick={() => {
+            if (sessionStorage.getItem(GROUPS_STORAGE_KEY)) sessionStorage.setItem(IMPORT_FLAG, "1");
+          }}
+        >
+          {t("account.signUp")}
+        </Link>
+      </Button>
+      <Button asChild variant="outline">
+        <Link href="/sign-in">{t("account.signIn")}</Link>
+      </Button>
     </div>
   );
 }

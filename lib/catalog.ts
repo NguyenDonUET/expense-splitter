@@ -1,3 +1,6 @@
+import type { LucideIcon } from "lucide-react";
+import { BedDouble, Bus, CircleDot, Plug, ShoppingBag, ShoppingCart, Ticket, Utensils, Home } from "lucide-react";
+
 export const PREDEFINED_CATEGORIES = [
   "Food & Drink",
   "Transport",
@@ -9,6 +12,22 @@ export const PREDEFINED_CATEGORIES = [
   "Groceries",
   "Other",
 ] as const;
+
+const CATEGORY_ICONS: Record<string, LucideIcon> = {
+  "Food & Drink": Utensils,
+  Transport: Bus,
+  Accommodation: BedDouble,
+  Housing: Home,
+  Entertainment: Ticket,
+  Shopping: ShoppingBag,
+  Utilities: Plug,
+  Groceries: ShoppingCart,
+  Other: CircleDot,
+};
+
+export function categoryIcon(category: string): LucideIcon {
+  return CATEGORY_ICONS[category] ?? CircleDot;
+}
 
 export const SUPPORTED_CURRENCIES = ["USD", "EUR", "GBP", "JPY", "VND", "CAD", "AUD", "CHF", "CNY", "INR", "MXN"] as const;
 

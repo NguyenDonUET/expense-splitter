@@ -1,5 +1,7 @@
 import type { Group } from "@/lib/domain";
 import { memberName } from "@/lib/group-actions";
+import type { Translate } from "@/lib/i18n/t";
+import { translateCategory } from "@/lib/i18n/t";
 
 function cell(value: string | number): string {
   const text = String(value);
@@ -7,16 +9,16 @@ function cell(value: string | number): string {
   return text;
 }
 
-export function expensesToCsv(group: Group): string {
+export function expensesToCsv(group: Group, translate: Translate = (key) => key): string {
   const headers = [
-    "date",
-    "description",
-    "amount",
-    "currency",
-    "category",
-    "paid by",
-    "split type",
-    ...group.members.map((member) => `${member.name} share`),
+    translate("csv.date"),
+    translate("csv.description"),
+    translate("csv.amount"),
+    translate("csv.currency"),
+    translate("csv.category"),
+    translate("csv.paidBy"),
+    translate("csv.splitType"),
+    ...group.members.map((member) => translate("csv.shareColumn", { name: member.name })),
   ];
   const rows = [...group.expenses]
     .sort((a, b) => (a.date < b.date ? 1 : -1))
@@ -26,7 +28,7 @@ export function expensesToCsv(group: Group): string {
         expense.description,
         expense.amount,
         expense.currency,
-        expense.category,
+        translateCategory(translate, expense.category),
         memberName(group, expense.paidBy),
         expense.splitType,
         ...group.members.map((member) => expense.splits.find((split) => split.memberId === member.id)?.amount ?? ""),

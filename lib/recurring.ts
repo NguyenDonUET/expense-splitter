@@ -1,4 +1,5 @@
 import type { Expense, Group, RecurringFrequency } from "@/lib/domain";
+import { recordActivity } from "@/lib/group-actions";
 import { createId } from "@/lib/ids";
 
 export function addFrequency(iso: string, frequency: RecurringFrequency): string {
@@ -22,18 +23,22 @@ export interface DueRecurrence {
   nextDate: string;
 }
 
+export function nextOccurrenceDate(group: Group, template: Expense): string | null {
+  if (!template.recurring) return null;
+  return addFrequency(latestOccurrence(group, template).date, template.recurring);
+}
+
 export function dueRecurrences(group: Group, now = new Date()): DueRecurrence[] {
   const due: DueRecurrence[] = [];
   for (const template of recurringTemplates(group)) {
     if (!template.recurring || template.recurrencePaused) continue;
-    const latest = latestOccurrence(group, template);
-    const nextDate = addFrequency(latest.date, template.recurring);
-    if (new Date(nextDate).getTime() <= now.getTime()) due.push({ template, nextDate });
+    const nextDate = nextOccurrenceDate(group, template);
+    if (nextDate && new Date(nextDate).getTime() <= now.getTime()) due.push({ template, nextDate });
   }
   return due;
 }
 
-export function confirmOccurrence(group: Group, templateId: string, nextDate: string): Group {
+export function confirmOccurrence(group: Group, templateId: string, nextDate: string, actorId?: string): Group {
   const template = group.expenses.find((expense) => expense.id === templateId);
   if (!template?.recurring) return group;
   const occurrence: Expense = {
@@ -43,7 +48,16 @@ export function confirmOccurrence(group: Group, templateId: string, nextDate: st
     recurringTemplateId: template.id,
     recurrencePaused: undefined,
   };
-  return { ...group, expenses: [occurrence, ...group.expenses] };
+  return recordActivity(
+    { ...group, expenses: [occurrence, ...group.expenses] },
+    {
+      kind: "expense.added",
+      actorId: actorId ?? occurrence.paidBy,
+      expenseId: occurrence.id,
+      label: occurrence.description,
+      summary: `${occurrence.description} added`,
+    },
+  );
 }
 
 export function setRecurrencePaused(group: Group, templateId: string, paused: boolean): Group {

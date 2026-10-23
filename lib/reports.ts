@@ -21,6 +21,8 @@ export interface MemberSpend {
   memberId: string;
   paid: number;
   share: number;
+  /** Paid minus share in the group currency. Positive means this person paid more than their share. */
+  net: number;
 }
 
 export function filteredExpenses(group: Group, filters: ExpenseFilters): Expense[] {
@@ -69,12 +71,23 @@ export function memberSpending(group: Group, expenses: Expense[]): MemberSpend[]
     for (const [memberId, minor] of converted.shares) share.set(memberId, (share.get(memberId) ?? 0) + minor);
   }
   return [...new Set([...paid.keys(), ...share.keys()])]
-    .map((memberId) => ({
-      memberId,
-      paid: fromMinor(paid.get(memberId) ?? 0, group.currency),
-      share: fromMinor(share.get(memberId) ?? 0, group.currency),
-    }))
+    .map((memberId) => {
+      const paidAmount = fromMinor(paid.get(memberId) ?? 0, group.currency);
+      const shareAmount = fromMinor(share.get(memberId) ?? 0, group.currency);
+      return {
+        memberId,
+        paid: paidAmount,
+        share: shareAmount,
+        net: fromMinor((paid.get(memberId) ?? 0) - (share.get(memberId) ?? 0), group.currency),
+      };
+    })
     .sort((a, b) => b.paid - a.paid);
+}
+
+function localDay(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 export function monthRange(which: "this" | "last", now = new Date()): { from: string; to: string } {
@@ -82,6 +95,5 @@ export function monthRange(which: "this" | "last", now = new Date()): { from: st
   const month = now.getMonth() + (which === "this" ? 0 : -1);
   const start = new Date(year, month, 1);
   const end = new Date(year, month + 1, 0);
-  const iso = (date: Date) => date.toISOString().slice(0, 10);
-  return { from: iso(start), to: iso(end) };
+  return { from: localDay(start), to: localDay(end) };
 }

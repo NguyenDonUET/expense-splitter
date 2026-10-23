@@ -101,7 +101,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ready: true,
         mode: "session",
         groups: [],
-        error: error instanceof Error ? error.message : "Could not load groups.",
+        error: error instanceof Error ? error.message : "errors.loadGroups",
       });
     }
   },
@@ -125,7 +125,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   async commit(group, message) {
-    if (!persistence) throw new Error("Groups are not loaded yet.");
+    if (!persistence) throw new Error("errors.notReady");
     const previous = get().groups;
     const groups = previous.some((item) => item.id === group.id)
       ? previous.map((item) => (item.id === group.id ? group : item))
@@ -135,21 +135,21 @@ export const useAppStore = create<AppState>((set, get) => ({
       await persistence.save(group);
       set({ message });
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Could not save that change.";
+      const text = error instanceof Error ? error.message : "errors.saveFailed";
       set({ groups: previous, error: text });
       throw new Error(text);
     }
   },
 
   async removeGroup(groupId) {
-    if (!persistence) throw new Error("Groups are not loaded yet.");
+    if (!persistence) throw new Error("errors.notReady");
     const previous = get().groups;
     set({ groups: previous.filter((group) => group.id !== groupId), error: null, sheet: { kind: "closed" } });
     try {
       await persistence.remove(groupId);
-      set({ message: "Group deleted." });
+      set({ message: "status.groupDeleted" });
     } catch (error) {
-      const text = error instanceof Error ? error.message : "Could not delete that group.";
+      const text = error instanceof Error ? error.message : "errors.deleteFailed";
       set({ groups: previous, error: text });
       throw new Error(text);
     }
@@ -159,7 +159,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!persistence) return;
     await persistence.reset();
     const groups = await persistence.list();
-    set({ groups, message: "Sample groups restored.", sheet: { kind: "closed" } });
+    set({ groups, message: "status.samplesRestored", sheet: { kind: "closed" } });
   },
 
   dismissImport() {

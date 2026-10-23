@@ -75,8 +75,8 @@ describe("member removal", () => {
         },
       ],
     });
-    expect(removalBlockReason(current, "mem_j")).toMatch(/still has a balance/);
-    expect(() => removeMember(current, "mem_j", "mem_a")).toThrow(/still has a balance/);
+    expect(removalBlockReason(current, "mem_j")).toBe("errors.memberHasBalance");
+    expect(() => removeMember(current, "mem_j", "mem_a")).toThrow("errors.memberHasBalance");
   });
 });
 
@@ -101,7 +101,7 @@ describe("group deletion", () => {
         },
       ],
     });
-    expect(deleteGroupBlockReason(current)).toMatch(/Settle every balance/);
+    expect(deleteGroupBlockReason(current)).toBe("errors.groupHasBalances");
   });
 
   it("allows deleting a settled group", () => {
@@ -111,7 +111,7 @@ describe("group deletion", () => {
 
 describe("add member", () => {
   it("rejects a duplicate name", () => {
-    expect(() => addMember(group(), { ...jordan, id: "mem_new", name: "jordan" }, "mem_a")).toThrow(/already in this group/);
+    expect(() => addMember(group(), { ...jordan, id: "mem_new", name: "jordan" }, "mem_a")).toThrow("errors.memberDuplicate");
   });
 });
 
@@ -149,6 +149,6 @@ describe("settlements", () => {
         { id: "set_2", from: "mem_a", to: "mem_j", amount: 4, currency: "USD", exchangeRate: 1, date: "2026-01-03T00:00:00Z" },
         "mem_a",
       ),
-    ).toThrow(/does not owe/);
+    ).toThrow("errors.doesNotOwe");
   });
 });

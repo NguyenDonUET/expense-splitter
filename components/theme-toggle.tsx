@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Moon, Sun } from "lucide-react";
+import { useT } from "@/components/i18n-provider";
+import { Toggle } from "@/components/ui/toggle";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 type Appearance = "light" | "dark";
@@ -12,6 +15,7 @@ function readAppearance(): Appearance {
 }
 
 export function ThemeToggle() {
+  const t = useT();
   const [appearance, setAppearance] = useState<Appearance | null>(null);
 
   useEffect(() => {
@@ -22,22 +26,24 @@ export function ThemeToggle() {
     return () => media.removeEventListener("change", sync);
   }, []);
 
-  const next: Appearance = appearance === "dark" ? "light" : "dark";
-
-  function toggle() {
+  function apply(next: Appearance) {
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem(THEME_STORAGE_KEY, next);
     setAppearance(next);
   }
 
+  const dark = appearance === "dark";
+  const label = appearance ? (dark ? t("theme.toLight") : t("theme.toDark")) : t("theme.label");
+
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      aria-label={appearance ? `Switch to ${next} theme` : "Switch color theme"}
-      className="inline-flex min-h-11 items-center rounded-md border border-border bg-surface px-3 text-sm font-medium text-text-primary"
+    <Toggle
+      variant="outline"
+      pressed={dark}
+      onPressedChange={(on) => apply(on ? "dark" : "light")}
+      aria-label={label}
+      title={label}
     >
-      {appearance ? `Switch to ${next} theme` : "Switch theme"}
-    </button>
+      {dark ? <Sun aria-hidden="true" size={16} strokeWidth={1.75} /> : <Moon aria-hidden="true" size={16} strokeWidth={1.75} />}
+    </Toggle>
   );
 }

@@ -4,20 +4,26 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Plus, Repeat } from "lucide-react";
-import { activityFeed, formatFullDate, formatRelative } from "@/lib/activity";
+import { useI18n } from "@/components/i18n-provider";
+import { activityFeed, formatActivityItem, formatFullDate, formatRelative } from "@/lib/activity";
 import { computeBalances, memberBalance, paidByMember, shareForMember } from "@/lib/balances";
-import { categoryColor, categoriesForGroup } from "@/lib/catalog";
+import { categoryColor, categoryIcon, categoriesForGroup } from "@/lib/catalog";
 import { downloadCsv, expensesToCsv } from "@/lib/csv";
 import { deleteGroupBlockReason, memberName } from "@/lib/group-actions";
-import { isDust } from "@/lib/money";
-import { formatMoney } from "@/lib/money";
+import { translateCategory } from "@/lib/i18n/t";
+import { formatMoney, isDust, toMinor } from "@/lib/money";
 import { categoryBreakdown, filteredExpenses, memberSpending, monthRange } from "@/lib/reports";
-import { confirmOccurrence, dueRecurrences, setRecurrencePaused } from "@/lib/recurring";
+import { confirmOccurrence, dueRecurrences, nextOccurrenceDate, recurringTemplates, setRecurrencePaused } from "@/lib/recurring";
 import { useAppStore, viewerId } from "@/stores/app-store";
 import { Avatar } from "@/components/avatar";
-import { Button } from "@/components/ui";
+import { AppSelect } from "@/components/ui/app-select";
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function GroupDashboard({ groupId }: { groupId: string }) {
+  const { t, locale } = useI18n();
   const group = useAppStore((state) => state.groups.find((item) => item.id === groupId));
   const ready = useAppStore((state) => state.ready);
   const viewingAs = useAppStore((state) => state.viewingAs);
@@ -37,15 +43,15 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
   }, [groupId, setFilters]);
 
   useEffect(() => {
-    if (group) document.title = `${group.name} · Expense Splitter`;
-  }, [group]);
+    if (group) document.title = t("meta.groupTitle", { name: group.name });
+  }, [group, t]);
 
   if (!ready) {
     return (
       <main id="main" className="mx-auto grid max-w-content gap-4 px-4 py-8">
-        <div className="h-28 animate-pulse rounded-lg bg-bg-tertiary" />
-        <div className="h-16 animate-pulse rounded-lg bg-bg-tertiary" />
-        <div className="h-40 animate-pulse rounded-lg bg-bg-tertiary" />
+        <Skeleton className="h-28 rounded-lg" />
+        <Skeleton className="h-16 rounded-lg" />
+        <Skeleton className="h-40 rounded-lg" />
       </main>
     );
   }
@@ -53,10 +59,10 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
   if (!group) {
     return (
       <main id="main" className="mx-auto max-w-content px-4 py-10">
-        <h1 className="text-2xl font-bold">Group not found</h1>
-        <p className="mt-2 text-text-secondary">It may have been deleted in this browser.</p>
+        <h1 className="text-2xl font-bold">{t("groups.missingTitle")}</h1>
+        <p className="mt-2 text-text-secondary">{t("groups.missingBody")}</p>
         <Link href="/groups" className="mt-6 inline-flex min-h-11 items-center text-accent underline">
-          Back to groups
+          {t("groups.back")}
         </Link>
       </main>
     );
@@ -71,6 +77,7 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
   const spending = memberSpending(group, expenses);
   const feed = activityFeed(group);
   const due = dueRecurrences(group);
+  const series = recurringTemplates(group);
   const myPairs = balances.pairs.filter((pair) => pair.fromId === viewer || pair.toId === viewer);
   const otherPairs = balances.pairs.filter((pair) => pair.fromId !== viewer && pair.toId !== viewer);
   const timeline = [
@@ -90,22 +97,24 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
   const current = group;
 
   async function acceptDue(templateId: string, nextDate: string) {
-    await commit(confirmOccurrence(current, templateId, nextDate), "Recurring expense added.");
+    await commit(confirmOccurrence(current, templateId, nextDate, viewer), "status.recurringAdded");
   }
 
   return (
     <main id="main" className="mx-auto grid max-w-content gap-8 px-4 py-6">
-      <nav aria-label="Breadcrumb" className="text-sm text-text-secondary">
-        <ol className="flex flex-wrap items-center gap-2">
-          <li>
-            <Link href="/groups" className="underline-offset-4 hover:underline">
-              Groups
-            </Link>
-          </li>
-          <li aria-hidden="true">/</li>
-          <li aria-current="page">{group.name}</li>
-        </ol>
-      </nav>
+      <Breadcrumb>
+        <BreadcrumbList>
+          <BreadcrumbItem>
+            <BreadcrumbLink asChild>
+              <Link href="/groups">{t("nav.groups")}</Link>
+            </BreadcrumbLink>
+          </BreadcrumbItem>
+          <BreadcrumbSeparator />
+          <BreadcrumbItem>
+            <BreadcrumbPage>{group.name}</BreadcrumbPage>
+          </BreadcrumbItem>
+        </BreadcrumbList>
+      </Breadcrumb>
 
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -115,78 +124,72 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => openSheet({ kind: "expense", groupId: group.id })} disabled={group.members.length === 0}>
             <Plus aria-hidden="true" size={18} strokeWidth={1.75} />
-            Add expense
+            {t("dashboard.addExpense")}
           </Button>
-          <Button variant="quiet" onClick={() => openSheet({ kind: "settle", groupId: group.id })}>
-            Settle up
+          <Button variant="outline" onClick={() => openSheet({ kind: "settle", groupId: group.id })}>
+            {t("dashboard.settleUp")}
           </Button>
         </div>
       </header>
 
       <label className="grid max-w-xs gap-1 text-sm font-medium">
-        Viewing as
-        <select
-          className="min-h-11 rounded-md border border-border bg-surface px-3"
+        {t("dashboard.viewingAs")}
+        <AppSelect
           value={viewer}
-          onChange={(event) => setViewingAs(group.id, event.target.value)}
-        >
-          {group.members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+          onValueChange={(value) => setViewingAs(group.id, value)}
+          items={group.members.map((member) => ({ value: member.id, label: member.name }))}
+        />
       </label>
 
       <section aria-labelledby="balance-heading" className={`rounded-lg border p-5 ${settled ? "border-owed bg-owed-subtle" : mine.minor < 0 ? "border-owe bg-owe-subtle" : "border-border bg-surface"}`}>
         <h2 id="balance-heading" className="text-sm font-medium text-text-secondary">
-          Your balance
+          {t("dashboard.yourBalance")}
         </h2>
         {isDust(mine.minor) ? (
           <p className="mt-2 flex items-center gap-2 text-2xl font-bold">
-            <Check aria-hidden="true" /> {balances.pairs.length === 0 ? "All settled up" : "You're settled"}
+            <Check aria-hidden="true" /> {balances.pairs.length === 0 ? t("dashboard.allSettled") : t("dashboard.youreSettled")}
           </p>
         ) : (
           <p className={`mt-2 font-mono text-3xl font-semibold tabular-nums ${mine.minor < 0 ? "text-owe" : "text-owed"}`}>
             {mine.minor < 0 ? "−" : "+"}
             {formatMoney(Math.abs(mine.amount), group.currency)}
             <span className="mt-1 block font-sans text-base font-medium text-text-primary">
-              {mine.minor < 0 ? "You owe" : "You are owed"}
+              {mine.minor < 0 ? t("dashboard.youOwe") : t("dashboard.youAreOwed")}
             </span>
           </p>
         )}
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <dt className="text-text-secondary">Expenses</dt>
+            <dt className="text-text-secondary">{t("dashboard.expenses")}</dt>
             <dd className="font-mono tabular-nums">{group.expenses.length}</dd>
           </div>
           <div>
-            <dt className="text-text-secondary">Group spent</dt>
+            <dt className="text-text-secondary">{t("dashboard.groupSpent")}</dt>
             <dd className="font-mono tabular-nums">{formatMoney(balances.totalSpent, group.currency)}</dd>
           </div>
           <div>
-            <dt className="text-text-secondary">You paid</dt>
+            <dt className="text-text-secondary">{t("dashboard.youPaid")}</dt>
             <dd className="font-mono tabular-nums">{formatMoney(paidByMember(group, viewer), group.currency)}</dd>
           </div>
           <div>
-            <dt className="text-text-secondary">Your share</dt>
+            <dt className="text-text-secondary">{t("dashboard.yourShare")}</dt>
             <dd className="font-mono tabular-nums">{formatMoney(shareForMember(group, viewer), group.currency)}</dd>
           </div>
         </dl>
       </section>
 
       {due.length > 0 ? (
-        <section aria-label="Recurring expenses due" className="grid gap-3">
+        <section aria-label={t("dashboard.recurringDue")} className="grid gap-3">
           {due.map((item) => (
             <div key={item.template.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface p-3">
               <p>
                 <Repeat aria-hidden="true" className="mr-2 inline" size={16} />
-                {item.template.description} is due {formatRelative(item.nextDate)}.
+                {t("dashboard.isDue", { description: item.template.description, when: formatRelative(item.nextDate, locale) })}
               </p>
               <div className="flex gap-2">
-                <Button onClick={() => void acceptDue(item.template.id, item.nextDate)}>Add this one</Button>
-                <Button variant="quiet" onClick={() => void commit(setRecurrencePaused(group, item.template.id, true), "Recurring expense paused.")}>
-                  Pause
+                <Button onClick={() => void acceptDue(item.template.id, item.nextDate)}>{t("dashboard.addThisOne")}</Button>
+                <Button variant="outline" onClick={() => void commit(setRecurrencePaused(group, item.template.id, true), "status.recurringPaused")}>
+                  {t("dashboard.pause")}
                 </Button>
               </div>
             </div>
@@ -194,26 +197,72 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
         </section>
       ) : null}
 
+      {series.length > 0 ? (
+        <section aria-labelledby="recurring-heading">
+          <h2 id="recurring-heading" className="text-lg font-semibold">
+            {t("dashboard.recurring")}
+          </h2>
+          <ul className="mt-3 grid gap-2">
+            {series.map((template) => {
+              const next = nextOccurrenceDate(group, template);
+              const frequency = template.recurring ? t(`expense.${template.recurring}`) : "";
+              return (
+                <li key={template.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface px-3 py-3">
+                  <div>
+                    <p className="font-medium">
+                      <Repeat aria-hidden="true" className="mr-2 inline" size={16} />
+                      {template.description}
+                    </p>
+                    <p className="text-sm text-text-secondary">
+                      {frequency}
+                      {template.recurrencePaused ? ` · ${t("dashboard.paused")}` : next ? ` · ${t("dashboard.nextOn", { when: formatRelative(next, locale) })}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => openSheet({ kind: "expense", groupId: group.id, expenseId: template.id })}>
+                      {t("dashboard.editSeries")}
+                    </Button>
+                    {template.recurrencePaused ? (
+                      <Button variant="outline" onClick={() => void commit(setRecurrencePaused(group, template.id, false), "status.recurringResumed")}>
+                        {t("dashboard.resume")}
+                      </Button>
+                    ) : (
+                      <Button variant="outline" onClick={() => void commit(setRecurrencePaused(group, template.id, true), "status.recurringPaused")}>
+                        {t("dashboard.pause")}
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
       <section aria-labelledby="settle-heading">
         <h2 id="settle-heading" className="text-lg font-semibold">
-          Settle up
+          {t("dashboard.settleUp")}
         </h2>
         {balances.pairs.length === 0 ? (
-          <p className="mt-2 text-text-secondary">Nothing to settle. The group is square.</p>
+          <p className="mt-2 text-text-secondary">{t("dashboard.nothingToSettle")}</p>
         ) : (
           <ul className="mt-3 grid gap-2">
             {[...myPairs, ...otherPairs].map((pair) => {
               const mineDebt = pair.fromId === viewer;
               const text = mineDebt
-                ? `You owe ${memberName(group, pair.toId)} ${formatMoney(pair.amount, group.currency)}`
+                ? t("dashboard.youOwePerson", { name: memberName(group, pair.toId), amount: formatMoney(pair.amount, group.currency) })
                 : pair.toId === viewer
-                  ? `${memberName(group, pair.fromId)} owes you ${formatMoney(pair.amount, group.currency)}`
-                  : `${memberName(group, pair.fromId)} owes ${memberName(group, pair.toId)} ${formatMoney(pair.amount, group.currency)}`;
+                  ? t("dashboard.personOwesYou", { name: memberName(group, pair.fromId), amount: formatMoney(pair.amount, group.currency) })
+                  : t("dashboard.personOwesPerson", {
+                      from: memberName(group, pair.fromId),
+                      to: memberName(group, pair.toId),
+                      amount: formatMoney(pair.amount, group.currency),
+                    });
               return (
                 <li key={`${pair.fromId}-${pair.toId}`} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-surface px-3 py-2">
                   <p>{text}</p>
-                  <Button variant="quiet" onClick={() => openSheet({ kind: "settle", groupId: group.id, fromId: pair.fromId, toId: pair.toId })}>
-                    Record payment
+                  <Button variant="outline" onClick={() => openSheet({ kind: "settle", groupId: group.id, fromId: pair.fromId, toId: pair.toId })}>
+                    {t("dashboard.recordPayment")}
                   </Button>
                 </li>
               );
@@ -225,10 +274,10 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
       <section aria-labelledby="members-heading">
         <div className="flex items-center justify-between gap-3">
           <h2 id="members-heading" className="text-lg font-semibold">
-            Members
+            {t("dashboard.members")}
           </h2>
           <Button variant="ghost" onClick={() => openSheet({ kind: "members", groupId: group.id })}>
-            Edit members
+            {t("dashboard.editMembers")}
           </Button>
         </div>
         <ul className="mt-3 grid gap-2">
@@ -237,7 +286,11 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
             .map((item) => {
               const member = group.members.find((person) => person.id === item.memberId);
               if (!member) return null;
-              const label = isDust(item.minor) ? "Settled" : item.minor > 0 ? `Is owed ${formatMoney(item.amount, group.currency)}` : `Owes ${formatMoney(Math.abs(item.amount), group.currency)}`;
+              const label = isDust(item.minor)
+                ? t("groups.settled")
+                : item.minor > 0
+                  ? t("dashboard.isOwed", { amount: formatMoney(item.amount, group.currency) })
+                  : t("dashboard.owes", { amount: formatMoney(Math.abs(item.amount), group.currency) });
               return (
                 <li key={member.id} className="flex items-center justify-between gap-3">
                   <span className="flex items-center gap-3">
@@ -251,54 +304,51 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
               );
             })}
         </ul>
-        {group.members.length === 0 ? <p className="mt-2 text-text-secondary">Add the people who share this group, including anyone without an account.</p> : null}
+        {group.members.length === 0 ? <p className="mt-2 text-text-secondary">{t("dashboard.addPeople")}</p> : null}
       </section>
 
       <section aria-labelledby="filters-heading" className="grid gap-3">
         <h2 id="filters-heading" className="text-lg font-semibold">
-          Expenses
+          {t("dashboard.expenses")}
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1 text-sm font-medium">
-            Category
-            <select className="min-h-11 rounded-md border border-border bg-surface px-3" value={filters.category} onChange={(event) => setFilters({ ...filters, category: event.target.value })}>
-              <option value="all">All categories</option>
-              {categoriesForGroup(group.customCategories).map((category) => (
-                <option key={category} value={category}>
-                  {category}
-                </option>
-              ))}
-            </select>
+            {t("dashboard.category")}
+            <AppSelect
+              value={filters.category}
+              onValueChange={(value) => setFilters({ ...filters, category: value })}
+              items={[
+                { value: "all", label: t("dashboard.allCategories") },
+                ...categoriesForGroup(group.customCategories).map((category) => ({ value: category, label: translateCategory(t, category) })),
+              ]}
+            />
           </label>
           <label className="grid gap-1 text-sm font-medium">
-            Person
-            <select className="min-h-11 rounded-md border border-border bg-surface px-3" value={filters.memberId} onChange={(event) => setFilters({ ...filters, memberId: event.target.value })}>
-              <option value="all">Anyone</option>
-              {group.members.map((member) => (
-                <option key={member.id} value={member.id}>
-                  {member.name}
-                </option>
-              ))}
-            </select>
+            {t("dashboard.person")}
+            <AppSelect
+              value={filters.memberId}
+              onValueChange={(value) => setFilters({ ...filters, memberId: value })}
+              items={[{ value: "all", label: t("dashboard.anyone") }, ...group.members.map((member) => ({ value: member.id, label: member.name }))]}
+            />
           </label>
           <label className="grid gap-1 text-sm font-medium">
-            From
-            <input type="date" className="min-h-11 rounded-md border border-border bg-surface px-3" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />
+            {t("dashboard.from")}
+            <Input type="date" value={filters.from} onChange={(event) => setFilters({ ...filters, from: event.target.value })} />
           </label>
           <label className="grid gap-1 text-sm font-medium">
-            To
-            <input type="date" className="min-h-11 rounded-md border border-border bg-surface px-3" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} />
+            {t("dashboard.to")}
+            <Input type="date" value={filters.to} onChange={(event) => setFilters({ ...filters, to: event.target.value })} />
           </label>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variant="quiet" onClick={() => setFilters({ ...filters, ...monthRange("this") })}>
-            This month
+          <Button variant="outline" onClick={() => setFilters({ ...filters, ...monthRange("this") })}>
+            {t("dashboard.thisMonth")}
           </Button>
-          <Button variant="quiet" onClick={() => setFilters({ ...filters, ...monthRange("last") })}>
-            Last month
+          <Button variant="outline" onClick={() => setFilters({ ...filters, ...monthRange("last") })}>
+            {t("dashboard.lastMonth")}
           </Button>
           <Button variant="ghost" onClick={() => setFilters({ category: "all", memberId: "all", from: "", to: "" })}>
-            Clear filters
+            {t("dashboard.clearFilters")}
           </Button>
         </div>
       </section>
@@ -306,19 +356,29 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
       {breakdown.rows.length > 0 ? (
         <section aria-labelledby="category-heading">
           <h2 id="category-heading" className="text-lg font-semibold">
-            Spending by category
+            {t("dashboard.spendingByCategory")}
           </h2>
-          <p className="mt-1 font-mono text-sm tabular-nums text-text-secondary">{formatMoney(breakdown.total, group.currency)} in this view</p>
-          <ul className="mt-3 grid gap-2">
-            {breakdown.rows.map((row) => (
-              <li key={row.category} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 text-sm">
-                <span aria-hidden="true" className="size-2.5 rounded-full" style={{ background: categoryColor(row.category) }} />
-                <span>{row.category}</span>
-                <span className="font-mono tabular-nums">
-                  {formatMoney(row.amount, group.currency)} · {row.percent.toFixed(0)}%
-                </span>
-              </li>
-            ))}
+          <p className="mt-1 font-mono text-sm tabular-nums text-text-secondary">{t("dashboard.inThisView", { amount: formatMoney(breakdown.total, group.currency) })}</p>
+          <ul className="mt-3 grid gap-3">
+            {breakdown.rows.map((row) => {
+              const Icon = categoryIcon(row.category);
+              return (
+                <li key={row.category} className="grid gap-1.5">
+                  <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3 text-sm">
+                    <span className="inline-flex size-8 items-center justify-center rounded-full" style={{ background: `${categoryColor(row.category)}22`, color: categoryColor(row.category) }}>
+                      <Icon aria-hidden="true" size={16} strokeWidth={1.75} />
+                    </span>
+                    <span>{translateCategory(t, row.category)}</span>
+                    <span className="font-mono tabular-nums">
+                      {formatMoney(row.amount, group.currency)} · {row.percent.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+                    <div className="h-full rounded-full" style={{ width: `${row.percent}%`, background: categoryColor(row.category) }} />
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -326,42 +386,51 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
       <section aria-labelledby="report-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="report-heading" className="text-lg font-semibold">
-            Spending summary
+            {t("dashboard.spendingSummary")}
           </h2>
           <Button
-            variant="quiet"
-            onClick={() => downloadCsv(`${group.name.replaceAll(/\s+/g, "-").toLowerCase()}-expenses.csv`, expensesToCsv({ ...group, expenses }))}
+            variant="outline"
+            onClick={() => downloadCsv(`${group.name.replaceAll(/\s+/g, "-").toLowerCase()}-expenses.csv`, expensesToCsv({ ...group, expenses }, t))}
           >
-            Export CSV
+            {t("dashboard.exportCsv")}
           </Button>
         </div>
         <table className="mt-3 w-full text-left text-sm">
-          <caption className="sr-only">What each member paid and their share for the current filters</caption>
+          <caption className="sr-only">{t("dashboard.summaryCaption")}</caption>
           <thead>
             <tr className="text-text-secondary">
-              <th className="py-2 font-medium">Member</th>
-              <th className="py-2 font-medium">Paid</th>
-              <th className="py-2 font-medium">Share</th>
+              <th className="py-2 font-medium">{t("dashboard.member")}</th>
+              <th className="py-2 font-medium">{t("dashboard.paid")}</th>
+              <th className="py-2 font-medium">{t("dashboard.share")}</th>
+              <th className="py-2 font-medium">{t("dashboard.vsShare")}</th>
             </tr>
           </thead>
           <tbody>
-            {spending.map((row) => (
-              <tr key={row.memberId} className="border-t border-border-subtle">
-                <th scope="row" className="py-2 font-medium">
-                  {memberName(group, row.memberId)}
-                </th>
-                <td className="py-2 font-mono tabular-nums">{formatMoney(row.paid, group.currency)}</td>
-                <td className="py-2 font-mono tabular-nums">{formatMoney(row.share, group.currency)}</td>
-              </tr>
-            ))}
+            {spending.map((row) => {
+              const netMinor = toMinor(row.net, group.currency);
+              const even = isDust(netMinor);
+              const comparison = even
+                ? t("dashboard.paidEven")
+                : netMinor > 0
+                  ? t("dashboard.paidMore", { amount: formatMoney(row.net, group.currency) })
+                  : t("dashboard.paidLess", { amount: formatMoney(Math.abs(row.net), group.currency) });
+              return (
+                <tr key={row.memberId} className="border-t border-border-subtle">
+                  <th scope="row" className="py-2 font-medium">
+                    {memberName(group, row.memberId)}
+                  </th>
+                  <td className="py-2 font-mono tabular-nums">{formatMoney(row.paid, group.currency)}</td>
+                  <td className="py-2 font-mono tabular-nums">{formatMoney(row.share, group.currency)}</td>
+                  <td className={`py-2 text-sm ${even ? "text-text-secondary" : netMinor > 0 ? "text-owed" : "text-owe"}`}>{comparison}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </section>
 
       {timeline.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border p-6 text-text-secondary">
-          No expenses yet. Add your first one.
-        </p>
+        <p className="rounded-md border border-dashed border-border p-6 text-text-secondary">{t("dashboard.noExpenses")}</p>
       ) : (
         <ul className="grid gap-2">
           {timeline.map((item) =>
@@ -374,12 +443,20 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
                 >
                   <Avatar name={memberName(group, item.expense.paidBy)} color={group.members.find((member) => member.id === item.expense.paidBy)?.avatarColor ?? "#5b8def"} />
                   <span>
-                    <span className="block font-medium">{item.expense.description}</span>
+                    <span className="block font-medium">
+                      {item.expense.recurring || item.expense.recurringTemplateId ? (
+                        <Repeat aria-hidden="true" className="mr-1.5 inline align-text-bottom" size={14} />
+                      ) : null}
+                      {item.expense.description}
+                    </span>
                     <span className="block text-sm text-text-secondary">
-                      {memberName(group, item.expense.paidBy)} paid
-                      {item.expense.splitType !== "equal" ? ` · ${item.expense.splitType}` : ""}
-                      {item.expense.recurring ? " · repeats" : ""}
-                      <span className="hidden sm:inline"> · {item.expense.category}</span>
+                      {t("dashboard.paidLabel", { name: memberName(group, item.expense.paidBy) })}
+                      {item.expense.splitType !== "equal" ? ` · ${t(`split.${item.expense.splitType}`)}` : ""}
+                      {item.expense.recurring || item.expense.recurringTemplateId ? ` · ${t("dashboard.repeats")}` : ""}
+                      <span className="hidden sm:inline">
+                        {" "}
+                        · {translateCategory(t, item.expense.category)}
+                      </span>
                     </span>
                   </span>
                   <span className="text-right">
@@ -387,24 +464,24 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
                     {item.expense.currency !== group.currency ? (
                       <span className="block font-mono text-xs text-text-secondary tabular-nums">
                         {formatMoney(item.expense.amount * item.expense.exchangeRate, group.currency)}
-                        {item.expense.exchangeRateIsUserSet ? " · your rate" : ""}
+                        {item.expense.exchangeRateIsUserSet ? ` · ${t("dashboard.yourRate")}` : ""}
                       </span>
                     ) : null}
-                    <time className="block text-xs text-text-tertiary" dateTime={item.expense.date} title={formatFullDate(item.expense.date)}>
-                      {formatRelative(item.expense.date)}
+                    <time className="block text-xs text-text-tertiary" dateTime={item.expense.date} title={formatFullDate(item.expense.date, locale)}>
+                      {formatRelative(item.expense.date, locale)}
                     </time>
                   </span>
                 </button>
               </li>
             ) : (
               <li key={item.settlement.id} className="rounded-md border border-owed bg-owed-subtle px-3 py-3">
-                <p className="text-sm font-medium">Settlement</p>
+                <p className="text-sm font-medium">{t("dashboard.settlement")}</p>
                 <p>
-                  {memberName(group, item.settlement.from)} paid {memberName(group, item.settlement.to)}{" "}
+                  {t("dashboard.paidTo", { from: memberName(group, item.settlement.from), to: memberName(group, item.settlement.to) })}{" "}
                   <span className="font-mono tabular-nums">{formatMoney(item.settlement.amount, item.settlement.currency)}</span>
                 </p>
-                <time className="text-xs text-text-secondary" dateTime={item.settlement.date} title={formatFullDate(item.settlement.date)}>
-                  {formatRelative(item.settlement.date)}
+                <time className="text-xs text-text-secondary" dateTime={item.settlement.date} title={formatFullDate(item.settlement.date, locale)}>
+                  {formatRelative(item.settlement.date, locale)}
                 </time>
               </li>
             ),
@@ -414,39 +491,52 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
 
       <section aria-labelledby="activity-heading">
         <h2 id="activity-heading" className="text-lg font-semibold">
-          Activity
+          {t("dashboard.activity")}
         </h2>
-        <ul className="mt-3 grid gap-2">
-          {feed.slice(0, activityCount).map((item) => (
-            <li key={item.id} className="text-sm">
-              <span>{item.summary}</span>{" "}
-              <time className="text-text-tertiary" dateTime={item.at} title={formatFullDate(item.at)}>
-                {formatRelative(item.at)}
-              </time>
-            </li>
-          ))}
-        </ul>
+        {feed.length === 0 ? (
+          <p className="mt-2 text-text-secondary">{t("dashboard.noActivity")}</p>
+        ) : (
+          <ul className="mt-3 grid gap-2">
+            {feed.slice(0, activityCount).map((item) => {
+              const settlement = item.kind === "settlement.recorded";
+              const member = item.kind === "member.added" || item.kind === "member.removed";
+              return (
+                <li
+                  key={item.id}
+                  className={`rounded-md border-l-4 px-3 py-2 text-sm ${
+                    settlement ? "border-owed bg-owed-subtle" : member ? "border-border bg-bg-secondary" : "border-accent bg-surface"
+                  }`}
+                >
+                  <span>{formatActivityItem(group, item, t)}</span>{" "}
+                  <time className="text-text-tertiary" dateTime={item.at} title={formatFullDate(item.at, locale)}>
+                    {formatRelative(item.at, locale)}
+                  </time>
+                </li>
+              );
+            })}
+          </ul>
+        )}
         {feed.length > activityCount ? (
-          <Button className="mt-3" variant="quiet" onClick={() => setActivityCount((count) => count + 20)}>
-            Show more
+          <Button className="mt-3" variant="outline" onClick={() => setActivityCount((count) => count + 20)}>
+            {t("dashboard.showMore")}
           </Button>
         ) : null}
       </section>
 
       <section className="flex flex-wrap gap-2 border-t border-border pt-4">
-        <Button variant="quiet" onClick={() => openSheet({ kind: "group", groupId: group.id })}>
-          Edit group
+        <Button variant="outline" onClick={() => openSheet({ kind: "group", groupId: group.id })}>
+          {t("dashboard.editGroup")}
         </Button>
         {!confirmDelete ? (
           <Button variant="ghost" onClick={() => setConfirmDelete(true)}>
-            Delete group
+            {t("dashboard.deleteGroup")}
           </Button>
         ) : (
           <div className="grid gap-2">
-            <p>{deleteGroupBlockReason(group) ?? "Delete this group and its history?"}</p>
+            <p>{deleteGroupBlockReason(group) ? t(deleteGroupBlockReason(group) as string) : t("dashboard.confirmDeleteGroup")}</p>
             <div className="flex gap-2">
               <Button
-                variant="danger"
+                variant="destructive"
                 disabled={Boolean(deleteGroupBlockReason(group))}
                 onClick={() => {
                   if (deleteGroupBlockReason(group)) return;
@@ -454,10 +544,10 @@ export function GroupDashboard({ groupId }: { groupId: string }) {
                   void removeGroup(group.id);
                 }}
               >
-                Delete group
+                {t("dashboard.deleteGroup")}
               </Button>
-              <Button variant="quiet" onClick={() => setConfirmDelete(false)}>
-                Cancel
+              <Button variant="outline" onClick={() => setConfirmDelete(false)}>
+                {t("dashboard.cancel")}
               </Button>
             </div>
           </div>

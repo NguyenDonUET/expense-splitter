@@ -3,7 +3,7 @@ import type { GroupStore } from "@/lib/store/types";
 
 async function readBody<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) throw new Error(body.error || "The server could not complete that request.");
+  if (!response.ok) throw new Error(body.error || "errors.serverRequest");
   return body;
 }
 
@@ -29,6 +29,6 @@ export const httpStore: GroupStore = {
     await readBody(await fetch(`/api/groups/${id}`, { method: "DELETE" }));
   },
   async reset() {
-    throw new Error("Sample data reset is available in guest mode.");
+    throw new Error("errors.resetRemote");
   },
 };

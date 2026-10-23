@@ -10,7 +10,7 @@ function hashToken(token: string) {
 
 export async function POST(request: Request) {
   const db = await getDb();
-  if (!db) return NextResponse.json({ error: "MongoDB is not configured. Set DATABASE_URL to reset a password." }, { status: 503 });
+  if (!db) return NextResponse.json({ error: "errors.mongoReset" }, { status: 503 });
   const body = (await request.json()) as { email?: string };
   const email = body.email?.toLowerCase().trim() ?? "";
   const user = email ? await db.collection("users").findOne({ email }) : null;
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({
     ok: true,
-    message: "If an account exists for that email, a reset link is ready.",
+    message: "authApi.resetIfExists",
     resetUrl,
   });
 }

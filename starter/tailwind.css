@@ -1,5 +1,9 @@
 @import "tailwindcss";
 @import "./tokens.css";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *, [data-theme="dark"] *, :root[data-theme="dark"] *));
 
 @theme inline {
   --color-bg-primary: var(--color-bg-primary);
@@ -27,18 +31,40 @@
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
 
-  /* Layout: these mirror the layout tokens in tokens.css so there's a single
-     source of truth. The Tailwind namespaces differ from the raw token names,
-     which is what generates the utilities noted below:
-       w-sidebar     -> var(--sidebar-width)
-       max-w-content -> var(--content-max-width)
-       max-w-detail  -> var(--detail-pane-width)
-       max-w-page    -> var(--page-max-width)
-     Change a value once in tokens.css and both the raw var and the utility update. */
   --spacing-sidebar: var(--sidebar-width);
   --container-content: var(--content-max-width);
   --container-detail: var(--detail-pane-width);
   --container-page: var(--page-max-width);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
 }
 
 @theme {
@@ -73,4 +99,70 @@
   --radius-lg: 0.625rem;
   --radius-xl: 0.875rem;
   --radius-full: 9999px;
+}
+
+:root {
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--color-bg-tertiary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-bg-tertiary);
+  --muted-foreground: var(--color-text-secondary);
+  --accent-foreground: var(--color-text-primary);
+  --destructive: var(--color-error);
+  --input: var(--color-border);
+  --ring: var(--color-focus);
+  --sidebar: var(--color-bg-secondary);
+  --sidebar-foreground: var(--color-text-primary);
+  --sidebar-primary: var(--color-accent);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--color-bg-tertiary);
+  --sidebar-accent-foreground: var(--color-text-primary);
+  --sidebar-border: var(--color-border);
+  --sidebar-ring: var(--color-focus);
+  --chart-1: #5b8def;
+  --chart-2: #36d29a;
+  --chart-3: #e3b341;
+  --chart-4: #f2606a;
+  --chart-5: #c084fc;
+  --radius: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --primary-foreground: #0a0d13;
+    --sidebar-primary-foreground: #0a0d13;
+  }
+}
+
+:root[data-theme="dark"] {
+  --primary-foreground: #0a0d13;
+  --sidebar-primary-foreground: #0a0d13;
+}
+
+:root[data-theme="light"] {
+  --primary-foreground: #ffffff;
+  --sidebar-primary-foreground: #ffffff;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    background: var(--color-bg-primary);
+    color: var(--color-text-primary);
+  }
+
+  body {
+    @apply min-h-dvh bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+  }
 }

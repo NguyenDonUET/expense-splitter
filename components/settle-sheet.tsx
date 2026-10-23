@@ -1,18 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useT } from "@/components/i18n-provider";
 import { SUPPORTED_CURRENCIES } from "@/lib/catalog";
 import type { Group, Settlement } from "@/lib/domain";
 import { addSettlement, memberName } from "@/lib/group-actions";
 import { dateToIso } from "@/lib/dates";
+import { formatError } from "@/lib/i18n/format-error";
 import { createId } from "@/lib/ids";
 import { currencySymbol, formatMoney } from "@/lib/money";
 import { pairDebtAmount } from "@/lib/balances";
 import { rateIntoGroup } from "@/lib/sample";
 import { useAppStore, viewerId } from "@/stores/app-store";
-import { Button, controlClass, Field } from "@/components/ui";
+import { AppSelect } from "@/components/ui/app-select";
+import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
 
 export function SettleSheet({ group }: { group: Group }) {
+  const t = useT();
   const sheet = useAppStore((state) => state.sheet);
   const viewingAs = useAppStore((state) => state.viewingAs);
   const closeSheet = useAppStore((state) => state.closeSheet);
@@ -36,9 +42,11 @@ export function SettleSheet({ group }: { group: Group }) {
   }, [fromId, toId, debt]);
 
   const owedLabel = useMemo(() => {
-    if (debt <= 0) return `${memberName(group, fromId)} does not owe ${memberName(group, toId)}.`;
-    return `${memberName(group, fromId)} owes ${memberName(group, toId)} ${formatMoney(debt, group.currency)}.`;
-  }, [debt, fromId, group, toId]);
+    const from = memberName(group, fromId);
+    const to = memberName(group, toId);
+    if (debt <= 0) return t("settle.doesNotOwe", { from, to });
+    return t("settle.owes", { from, to, amount: formatMoney(debt, group.currency) });
+  }, [debt, fromId, group, t, toId]);
 
   async function onCurrency(next: string) {
     setCurrency(next);
@@ -47,18 +55,18 @@ export function SettleSheet({ group }: { group: Group }) {
       setRateNote(null);
       return;
     }
-    setRateNote("Fetching exchange rates...");
+    setRateNote(t("settle.rateFetching"));
     try {
       const response = await fetch(`/api/rates?base=${group.currency}`);
       const body = (await response.json()) as { rates?: Record<string, number>; stale?: boolean };
       if (!response.ok || !body.rates) {
-        setRateNote("Live rates are unavailable. Enter a rate to continue.");
+        setRateNote(t("settle.rateMissing"));
         return;
       }
       setRateText(String(rateIntoGroup(body.rates, next, group.currency)));
-      setRateNote(body.stale ? "Rates may be outdated." : null);
+      setRateNote(body.stale ? t("settle.rateStale") : null);
     } catch {
-      setRateNote("Live rates are unavailable. Enter a rate to continue.");
+      setRateNote(t("settle.rateMissing"));
     }
   }
 
@@ -66,11 +74,11 @@ export function SettleSheet({ group }: { group: Group }) {
     const value = Number(amount);
     const rate = Number(rateText);
     if (!fromId || !toId || fromId === toId) {
-      setError("Choose two different people.");
+      setError(t("settle.chooseTwo"));
       return;
     }
     if (!Number.isFinite(value) || value <= 0 || !Number.isFinite(rate) || rate <= 0) {
-      setError("Enter a payment greater than zero.");
+      setError(t("settle.paymentZero"));
       return;
     }
     const settlement: Settlement = {
@@ -85,10 +93,17 @@ export function SettleSheet({ group }: { group: Group }) {
     try {
       const next = addSettlement(group, settlement, viewer || fromId);
       setSaving(true);
-      await commit(next, `Settlement recorded: ${memberName(group, fromId)} paid ${memberName(group, toId)} ${formatMoney(value, currency)}.`);
+      await commit(
+        next,
+        t("status.settlementRecorded", {
+          from: memberName(group, fromId),
+          to: memberName(group, toId),
+          amount: formatMoney(value, currency),
+        }),
+      );
       closeSheet();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not record that payment.");
+      setError(formatError(caught, t, "errors.recordPayment"));
       setSaving(false);
     }
   }
@@ -101,37 +116,32 @@ export function SettleSheet({ group }: { group: Group }) {
         void save();
       }}
     >
-      <p>{owedLabel} A smaller amount is a partial payment.</p>
-      <Field id="settle-from" label="Who paid">
-        <select
+      <p>
+        {owedLabel} {t("settle.partialHint")}
+      </p>
+      <Field id="settle-from" label={t("settle.whoPaid")}>
+        <AppSelect
           id="settle-from"
-          className={controlClass}
           value={fromId}
-          onChange={(event) => {
-            setFromId(event.target.value);
+          onValueChange={(value) => {
+            setFromId(value);
             setAmount("");
           }}
-        >
-          {group.members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+          items={group.members.map((member) => ({ value: member.id, label: member.name }))}
+        />
       </Field>
-      <Field id="settle-to" label="Paid to">
-        <select id="settle-to" className={controlClass} value={toId} onChange={(event) => setToId(event.target.value)}>
-          {group.members.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.name}
-            </option>
-          ))}
-        </select>
+      <Field id="settle-to" label={t("settle.paidTo")}>
+        <AppSelect
+          id="settle-to"
+          value={toId}
+          onValueChange={setToId}
+          items={group.members.map((member) => ({ value: member.id, label: member.name }))}
+        />
       </Field>
-      <Field id="settle-amount" label="Amount" error={error}>
-        <input
+      <Field id="settle-amount" label={t("settle.amount")} error={error}>
+        <Input
           id="settle-amount"
-          className={`${controlClass} font-mono`}
+          className="font-mono"
           inputMode="decimal"
           aria-invalid={Boolean(error)}
           aria-describedby={error ? "settle-amount-error" : undefined}
@@ -140,30 +150,29 @@ export function SettleSheet({ group }: { group: Group }) {
         />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field id="settle-currency" label="Currency">
-          <select id="settle-currency" className={controlClass} value={currency} onChange={(event) => void onCurrency(event.target.value)}>
-            {SUPPORTED_CURRENCIES.map((code) => (
-              <option key={code} value={code}>
-                {currencySymbol(code)} {code}
-              </option>
-            ))}
-          </select>
+        <Field id="settle-currency" label={t("settle.currency")}>
+          <AppSelect
+            id="settle-currency"
+            value={currency}
+            onValueChange={(value) => void onCurrency(value)}
+            items={SUPPORTED_CURRENCIES.map((code) => ({ value: code, label: `${currencySymbol(code)} ${code}` }))}
+          />
         </Field>
-        <Field id="settle-date" label="Date">
-          <input id="settle-date" type="date" className={controlClass} value={date} onChange={(event) => setDate(event.target.value)} required />
+        <Field id="settle-date" label={t("settle.date")}>
+          <Input id="settle-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
         </Field>
       </div>
       {currency !== group.currency ? (
-        <Field id="settle-rate" label={`Rate into ${group.currency}`} hint={rateNote ?? undefined}>
-          <input id="settle-rate" className={`${controlClass} font-mono`} inputMode="decimal" value={rateText} onChange={(event) => setRateText(event.target.value)} />
+        <Field id="settle-rate" label={t("settle.rateInto", { currency: group.currency })} hint={rateNote ?? undefined}>
+          <Input id="settle-rate" className="font-mono" inputMode="decimal" value={rateText} onChange={(event) => setRateText(event.target.value)} />
         </Field>
       ) : null}
       <div className="flex gap-2">
         <Button type="submit" disabled={saving}>
-          {saving ? "Saving..." : "Record payment"}
+          {saving ? t("settle.saving") : t("settle.recordPayment")}
         </Button>
-        <Button variant="quiet" onClick={closeSheet}>
-          Cancel
+        <Button variant="outline" onClick={closeSheet}>
+          {t("settle.cancel")}
         </Button>
       </div>
     </form>

@@ -1,17 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { ExpenseSheet } from "@/components/expense-sheet";
 import { GroupSheet, MembersSheet } from "@/components/group-sheet";
 import { GroupList } from "@/components/groups-home";
+import { useT } from "@/components/i18n-provider";
 import { SettleSheet } from "@/components/settle-sheet";
-import { Button } from "@/components/ui";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { formatError, formatStatus } from "@/lib/i18n/format-error";
 import { IMPORT_FLAG } from "@/lib/store/types";
 import { useAppStore } from "@/stores/app-store";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
   const hydrate = useAppStore((state) => state.hydrate);
@@ -27,14 +32,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const dismissImport = useAppStore((state) => state.dismissImport);
   const resetSamples = useAppStore((state) => state.resetSamples);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const groupId = pathname.split("/")[2];
   const activeGroup = groups.find((group) => group.id === (sheet.kind === "closed" ? groupId : sheet.groupId ?? groupId));
   const sheetGroup = groups.find((group) => sheet.kind !== "closed" && sheet.kind !== "group" && group.id === sheet.groupId);
   const editingGroup = sheet.kind === "group" && sheet.groupId ? groups.find((group) => group.id === sheet.groupId) : undefined;
 
   useEffect(() => {
+    setMounted(true);
     void hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 1280px)");
+    const sync = () => setWide(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -49,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [activeGroup, openSheet]);
 
   useEffect(() => {
-    if (sheet.kind === "closed" || !dialogRef.current) return;
+    if (sheet.kind === "closed" || !wide || !dialogRef.current) return;
     const root = dialogRef.current;
     const previous = document.activeElement as HTMLElement | null;
     const focusable = () =>
@@ -81,7 +97,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [sheet, closeSheet]);
 
   const title =
-    sheet.kind === "expense" ? (sheet.expenseId ? "Edit expense" : "Add expense") : sheet.kind === "settle" ? "Record a payment" : sheet.kind === "members" ? "Members" : sheet.kind === "group" ? (sheet.groupId ? "Edit group" : "New group") : "";
+    sheet.kind === "expense"
+      ? sheet.expenseId
+        ? t("shell.editExpense")
+        : t("shell.addExpense")
+      : sheet.kind === "settle"
+        ? t("shell.recordPayment")
+        : sheet.kind === "members"
+          ? t("shell.members")
+          : sheet.kind === "group"
+            ? sheet.groupId
+              ? t("shell.editGroup")
+              : t("shell.newGroup")
+            : "";
 
   async function copyGuestData() {
     const raw = sessionStorage.getItem("expense-splitter:groups");
@@ -97,79 +125,94 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     await hydrate();
   }
 
+  const sheetForm = (
+    <>
+      {sheet.kind === "group" ? <GroupSheet group={editingGroup} /> : null}
+      {sheet.kind === "expense" && sheetGroup ? <ExpenseSheet key={sheet.expenseId ?? "new"} group={sheetGroup} /> : null}
+      {sheet.kind === "settle" && sheetGroup ? <SettleSheet key={`${sheet.fromId}-${sheet.toId}`} group={sheetGroup} /> : null}
+      {sheet.kind === "members" && sheetGroup ? <MembersSheet group={sheetGroup} /> : null}
+    </>
+  );
+
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-4rem)] max-w-page">
       <aside className="hidden w-sidebar shrink-0 border-r border-border px-3 py-4 lg:block">
-        <nav aria-label="Groups">{ready ? <GroupList currentId={groupId} /> : <p className="text-sm text-text-secondary">Loading groups...</p>}</nav>
+        <nav aria-label={t("nav.groups")}>
+          {mounted && ready ? <GroupList currentId={groupId} /> : <p className="text-sm text-text-secondary">{t("shell.loadingGroups")}</p>}
+        </nav>
         {mode !== "remote" ? (
-          <button type="button" className="mt-6 text-sm text-text-secondary underline-offset-4 hover:underline" onClick={() => void resetSamples()}>
-            Restore sample groups
-          </button>
+          <Button type="button" variant="ghost" className="mt-6" onClick={() => void resetSamples()}>
+            {t("shell.restoreSamples")}
+          </Button>
         ) : null}
       </aside>
       <div className="flex min-w-0 flex-1">
         <div className="min-w-0 flex-1 pb-24 lg:pb-0">
           {importOffer ? (
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-accent-subtle px-4 py-3 text-sm">
-              <p>Copy the groups from this browser session into your account?</p>
+              <p>{t("shell.importOffer")}</p>
               <div className="flex gap-2">
-                <Button onClick={() => void copyGuestData()}>Copy groups</Button>
-                <Button variant="quiet" onClick={dismissImport}>
-                  Not now
+                <Button onClick={() => void copyGuestData()}>{t("shell.copyGroups")}</Button>
+                <Button variant="outline" onClick={dismissImport}>
+                  {t("shell.notNow")}
                 </Button>
               </div>
             </div>
           ) : null}
-          {error ? <p className="px-4 pt-4 text-sm text-error">{error}</p> : null}
+          {error ? (
+            <Alert variant="destructive" className="m-4">
+              <AlertDescription>{formatError(error, t)}</AlertDescription>
+            </Alert>
+          ) : null}
           {children}
           <div aria-live="polite" className="sr-only">
-            {message}
+            {formatStatus(message, t)}
           </div>
         </div>
-        {sheet.kind !== "closed" ? (
-          <div className="fixed inset-0 z-40 xl:static xl:z-auto xl:w-[22rem] xl:shrink-0">
-            <button type="button" tabIndex={-1} className="absolute inset-0 bg-[#0A0D13]/50 xl:hidden" aria-label="Close dialog" onClick={closeSheet} />
-            <div
-              ref={dialogRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="sheet-title"
-              className="absolute inset-y-0 right-0 w-full overflow-auto bg-surface p-4 shadow-lg xl:static xl:h-full xl:border-l xl:border-border xl:shadow-none"
-            >
-              <h2 id="sheet-title" className="text-lg font-semibold">
-                {title}
-              </h2>
-              <div className="mt-4">
-                {sheet.kind === "group" ? <GroupSheet group={editingGroup} /> : null}
-                {sheet.kind === "expense" && sheetGroup ? <ExpenseSheet key={sheet.expenseId ?? "new"} group={sheetGroup} /> : null}
-                {sheet.kind === "settle" && sheetGroup ? <SettleSheet key={`${sheet.fromId}-${sheet.toId}`} group={sheetGroup} /> : null}
-                {sheet.kind === "members" && sheetGroup ? <MembersSheet group={sheetGroup} /> : null}
-              </div>
-            </div>
-          </div>
+        {sheet.kind !== "closed" && wide ? (
+          <aside
+            ref={dialogRef}
+            className="hidden w-[22rem] shrink-0 overflow-auto border-l border-border bg-surface p-4 xl:block"
+            aria-labelledby="sheet-title"
+          >
+            <h2 id="sheet-title" className="text-lg font-semibold">
+              {title}
+            </h2>
+            <div className="mt-4">{sheetForm}</div>
+          </aside>
         ) : null}
+        <Sheet open={sheet.kind !== "closed" && !wide} onOpenChange={(open) => !open && closeSheet()}>
+          <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+            <SheetHeader>
+              <SheetTitle>{title}</SheetTitle>
+            </SheetHeader>
+            <div className="px-4 pb-8">{sheetForm}</div>
+          </SheetContent>
+        </Sheet>
       </div>
-      <nav aria-label="Mobile" className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-surface lg:hidden">
-        <button type="button" className="min-h-14 flex-1 text-sm font-medium" onClick={() => router.push("/groups")}>
-          Groups
-        </button>
-        <button
+      <nav aria-label={t("shell.mobile")} className="fixed inset-x-0 bottom-0 z-30 flex border-t border-border bg-surface lg:hidden">
+        <Button type="button" variant="ghost" className="h-14 min-h-14 flex-1 rounded-none" onClick={() => router.push("/groups")}>
+          {t("nav.groups")}
+        </Button>
+        <Button
           type="button"
-          className="inline-flex min-h-14 flex-1 items-center justify-center gap-2 text-sm font-semibold"
+          variant="ghost"
+          className="h-14 min-h-14 flex-1 rounded-none"
           disabled={!activeGroup}
           onClick={() => activeGroup && openSheet({ kind: "expense", groupId: activeGroup.id })}
         >
           <Plus aria-hidden="true" size={18} strokeWidth={1.75} />
-          Add
-        </button>
-        <button
+          {t("shell.add")}
+        </Button>
+        <Button
           type="button"
-          className="min-h-14 flex-1 text-sm font-medium"
+          variant="ghost"
+          className="h-14 min-h-14 flex-1 rounded-none"
           disabled={!activeGroup}
           onClick={() => activeGroup && openSheet({ kind: "settle", groupId: activeGroup.id })}
         >
-          Settle
-        </button>
+          {t("shell.settle")}
+        </Button>
       </nav>
     </div>
   );

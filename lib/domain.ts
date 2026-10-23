@@ -53,6 +53,8 @@ export interface ActivityEvent {
   at: string;
   actorId?: string;
   summary: string;
+  /** Proper noun used when formatting the event in the UI locale (expense description or member name). */
+  label?: string;
   expenseId?: string;
   settlementId?: string;
   memberId?: string;
